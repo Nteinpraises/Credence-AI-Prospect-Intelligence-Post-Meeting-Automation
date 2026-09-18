@@ -1,1 +1,486 @@
-
+{
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "documentId": {
+          "__rl": true,
+          "value": "1YKXlY3lImOE2y2H10GkMoSQhIfpAis1DiCnM-7Gy12g",
+          "mode": "list",
+          "cachedResultName": "Blossom's Form (Responses)",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1YKXlY3lImOE2y2H10GkMoSQhIfpAis1DiCnM-7Gy12g/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1516269633,
+          "mode": "list",
+          "cachedResultName": "Form responses 1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1YKXlY3lImOE2y2H10GkMoSQhIfpAis1DiCnM-7Gy12g/edit#gid=1516269633"
+        },
+        "event": "rowAdded",
+        "options": {}
+      },
+      "id": "32fe3d74-4c84-43f9-b57b-70282c609507",
+      "name": "New Form Response",
+      "type": "n8n-nodes-base.googleSheetsTrigger",
+      "typeVersion": 1,
+      "position": [
+        224,
+        0
+      ],
+      "credentials": {
+        "googleSheetsTriggerOAuth2Api": {
+          "id": "CfBp5B5YJNSqoexK",
+          "name": "Google Sheets Trigger account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const form = $json;\n\n// Helper: tries multiple possible column name variants.\n// Google Forms uses the question text as the column header, so we cover\n// the most common capitalisation and spacing variants.\nconst get = function(keys) {\n  for (let i = 0; i < keys.length; i++) {\n    const v = form[keys[i]];\n    if (v !== undefined && v !== null && String(v).trim() !== '') return String(v).trim();\n  }\n  return '';\n};\n\nconst prospectEmail = get(['Email Address', 'Email', 'email', 'email_address']).toLowerCase();\nconst meetingDate   = get(['Meeting Date', 'Meeting date', 'meeting_date', 'Date of Meeting']);\nconst rawId = prospectEmail.replace(/[^a-z0-9]/g, '') + meetingDate.replace(/[^0-9]/g, '');\nconst prospectId = 'P-' + rawId.substring(0, 16) + '-' + Date.now().toString(36);\n\nreturn [{\n  json: {\n    prospect_id:      prospectId,\n    prospect_name:    get(['Full Name', 'Name', 'full_name', 'name']),\n    prospect_email:   prospectEmail,\n    company_name:     get(['Company Name', 'Company', 'company_name', 'company']),\n    job_title:        get(['Job Title / Role', 'Job Title', 'Role', 'job_title', 'role', 'Title']),\n    company_website:  get(['Company Website', 'Website', 'company_website', 'website', 'Company URL']),\n    linkedin_profile: get(['LinkedIn Profile', 'LinkedIn', 'linkedin_profile', 'linkedin', 'LinkedIn URL']),\n    company_linkedin: get(['Company LinkedIn', 'Company LinkedIn Page', 'company_linkedin', 'Company LinkedIn URL']),\n    meeting_reason:   get(['Reason for Meeting', 'Reason', 'meeting_reason', 'reason', 'Meeting Reason', 'Purpose']),\n    meeting_date:     meetingDate,\n    additional_context: get(['Additional Context', 'Additional context', 'additional_context', 'context', 'Notes', 'notes']),\n    submitted_at:     new Date().toISOString(),\n  }\n}];"
+      },
+      "id": "a08dfad0-591c-4fd2-9fae-132c90a76384",
+      "name": "Normalize Prospect Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        448,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.company_website }}",
+        "options": {
+          "allowUnauthorizedCerts": true,
+          "redirect": {
+            "redirect": {
+              "maxRedirects": 5
+            }
+          },
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "text"
+            }
+          },
+          "timeout": 15000
+        }
+      },
+      "id": "a98c448f-d53b-4a40-b5b7-7dfc44a56557",
+      "name": "Research - Company Website",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        672,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.tavily.com/search",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpTemplatedCustomAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { query: $(\"Normalize Prospect Data\").first().json.prospect_name + \" \" + $(\"Normalize Prospect Data\").first().json.company_name + \" professional background role\", search_depth: \"basic\", max_results: 5, include_answer: true } }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          },
+          "timeout": 20000
+        }
+      },
+      "id": "ccb496e4-a5ef-4e2b-92af-5f7c0b0e9350",
+      "name": "Research - Prospect & Company",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        896,
+        0
+      ],
+      "credentials": {
+        "httpTemplatedCustomAuth": {
+          "id": "kOsQumwt11imsuLY",
+          "name": "Tavily API (eterna)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.tavily.com/search",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpTemplatedCustomAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { query: $(\"Normalize Prospect Data\").first().json.company_name + \" news announcement hiring expansion 2024 2025\", search_depth: \"basic\", max_results: 5, include_answer: true } }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          },
+          "timeout": 20000
+        }
+      },
+      "id": "8193489c-5f53-44f9-8013-bd4f6cb9028f",
+      "name": "Research - Company News",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1120,
+        0
+      ],
+      "credentials": {
+        "httpTemplatedCustomAuth": {
+          "id": "kOsQumwt11imsuLY",
+          "name": "Tavily API (eterna)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.tavily.com/search",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpTemplatedCustomAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { query: \"site:linkedin.com \" + $(\"Normalize Prospect Data\").first().json.prospect_name + \" \" + $(\"Normalize Prospect Data\").first().json.company_name + \" \" + ($(\"Normalize Prospect Data\").first().json.linkedin_profile || \"\"), search_depth: \"basic\", max_results: 5, include_answer: false } }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          },
+          "timeout": 20000
+        }
+      },
+      "id": "061454bf-741b-49fc-8cc2-ea045173abc1",
+      "name": "Research - LinkedIn Presence",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1344,
+        0
+      ],
+      "credentials": {
+        "httpTemplatedCustomAuth": {
+          "id": "kOsQumwt11imsuLY",
+          "name": "Tavily API (eterna)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const prospect = $('Normalize Prospect Data').first().json;\nconst LF = String.fromCharCode(10);\n\n// --- Company Website ---\nlet websiteContent = 'Unable to retrieve website content.';\ntry {\n  const webNode = $('Research - Company Website').first().json;\n  const rawHtml = (webNode.data || '').substring(0, 8000);\n  websiteContent = rawHtml\n    .replace(/<script[\\s\\S]*?<\\/script>/gi, ' ')\n    .replace(/<style[\\s\\S]*?<\\/style>/gi, ' ')\n    .replace(/<[^>]+>/g, ' ')\n    .replace(/\\s+/g, ' ')\n    .trim()\n    .substring(0, 3000);\n  if (!websiteContent) websiteContent = 'Website content could not be extracted.';\n} catch(e) {\n  websiteContent = 'Website research failed: ' + e.message;\n}\n\n// --- Format Tavily Results ---\nconst formatSearch = function(nodeData, label) {\n  try {\n    const data = nodeData || {};\n    const lines = [label + ':'];\n    if (data.answer) lines.push('Summary: ' + data.answer);\n    const results = data.results || [];\n    if (results.length === 0) {\n      lines.push('No results found.');\n    } else {\n      results.forEach(function(r, i) {\n        lines.push('');\n        lines.push('Result ' + (i + 1) + ':');\n        lines.push('  Title: ' + (r.title || ''));\n        lines.push('  URL: ' + (r.url || ''));\n        lines.push('  Content: ' + (r.content || '').substring(0, 600));\n      });\n    }\n    return lines.join(LF);\n  } catch(e) {\n    return label + ': Research step failed.';\n  }\n};\n\nlet prospectSearchData = {};\ntry { prospectSearchData = $('Research - Prospect & Company').first().json; } catch(e) {}\n\nlet newsData = {};\ntry { newsData = $('Research - Company News').first().json; } catch(e) {}\n\nlet linkedinData = {};\ntry { linkedinData = $('Research - LinkedIn Presence').first().json; } catch(e) {}\n\n// --- Build the compiled prompt ---\nconst sections = [\n  '=== PROSPECT DATA ===',\n  'Name: ' + prospect.prospect_name,\n  'Email: ' + prospect.prospect_email,\n  'Company: ' + prospect.company_name,\n  'Job Title: ' + prospect.job_title,\n  'Website: ' + prospect.company_website,\n  'LinkedIn Profile: ' + (prospect.linkedin_profile || 'Not provided'),\n  'Company LinkedIn: ' + (prospect.company_linkedin || 'Not provided'),\n  'Meeting Date: ' + prospect.meeting_date,\n  'Reason for Meeting: ' + prospect.meeting_reason,\n  'Additional Context: ' + (prospect.additional_context || 'None provided'),\n  '',\n  '=== COMPANY WEBSITE CONTENT ===',\n  websiteContent,\n  '',\n  '=== PUBLIC RESEARCH RESULTS ===',\n  formatSearch(prospectSearchData, 'PROSPECT & COMPANY SEARCH'),\n  '',\n  formatSearch(newsData, 'COMPANY NEWS & ANNOUNCEMENTS'),\n  '',\n  formatSearch(linkedinData, 'LINKEDIN SEARCH'),\n];\n\nreturn [{\n  json: {\n    prospect_id: prospect.prospect_id,\n    prospect_name: prospect.prospect_name,\n    prospect_email: prospect.prospect_email,\n    company_name: prospect.company_name,\n    job_title: prospect.job_title,\n    company_website: prospect.company_website,\n    linkedin_profile: prospect.linkedin_profile,\n    company_linkedin: prospect.company_linkedin,\n    meeting_date: prospect.meeting_date,\n    meeting_reason: prospect.meeting_reason,\n    additional_context: prospect.additional_context,\n    submitted_at: prospect.submitted_at,\n    compiled_prompt: sections.join(LF),\n  }\n}];"
+      },
+      "id": "9f4df668-2b57-4a4c-93ae-cbfdd813b680",
+      "name": "Collect & Compile Research",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1568,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "models/gemini-2.5-flash"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "={{ $json.compiled_prompt }}"
+            }
+          ]
+        },
+        "jsonOutput": true,
+        "builtInTools": {
+          "googleSearch": false,
+          "urlContext": false,
+          "codeExecution": false
+        },
+        "options": {
+          "systemMessage": "You are the Prospect Intelligence Analyst for Credence.\n\nYour job is to analyze publicly available information about a prospect before a business meeting and produce a concise, evidence-based intelligence briefing for Blossom.\n\nYou are not a generic company researcher.\n\nYour purpose is to identify specific observations, patterns, potential gaps, and useful discussion opportunities that can help Blossom have a more informed conversation.\n\nUse the SEE -> LOCK -> OFFER framework.\n\nSEE:\nIdentify something real, specific, and observable about the prospect or company. It must be supported by the supplied research.\n\nLOCK:\nInterpret the observation carefully. Consider what pattern, gap, friction, or potential cost it may indicate.\n\nOFFER:\nIdentify the smallest useful discussion opportunity, angle, or question based on the evidence. Do not automatically turn this into a sales pitch.\n\nLook for these public signals when evidence exists:\n1. Growth\n2. Pain\n3. Transition\n4. Engagement\n5. Quiet\n\nDo not force a signal when evidence does not exist.\n\nEvidence rules:\n- Never invent facts.\n- Never invent sources.\n- Never invent URLs.\n- Never invent quotes.\n- Never infer private information.\n- Never claim an internal problem without supporting evidence.\n- Do not turn weak evidence into a strong claim.\n- Distinguish facts from interpretations.\n- Include source URLs for important observations.\n- Prefer recent and directly relevant evidence.\n\nFor every important insight distinguish:\nOBSERVED FACT\nINTERPRETATION\nUNKNOWN\n\nUse the meeting reason to determine what research matters.\nSpecific evidence is more valuable than quantity.\nDo not produce generic statements such as \"the company is growing\" unless you explain the exact evidence.\nDo not create a lead score or ranking.\n\nYou MUST respond with ONLY valid JSON matching exactly this structure (no markdown, no explanation, no code fences):\n{\n  \"prospect\": {\n    \"name\": \"\",\n    \"email\": \"\",\n    \"company\": \"\",\n    \"role\": \"\",\n    \"website\": \"\",\n    \"linkedin\": \"\",\n    \"meeting_date\": \"\",\n    \"meeting_reason\": \"\"\n  },\n  \"overview\": \"\",\n  \"public_positioning\": \"\",\n  \"signals\": [\n    {\n      \"signal_type\": \"\",\n      \"observation\": \"\",\n      \"evidence\": \"\",\n      \"source\": \"\",\n      \"interpretation\": \"\",\n      \"confidence\": \"\"\n    }\n  ],\n  \"see_lock_analysis\": [\n    {\n      \"see\": \"\",\n      \"lock\": \"\",\n      \"known\": \"\",\n      \"inferred\": \"\",\n      \"unknown\": \"\",\n      \"confidence\": \"\"\n    }\n  ],\n  \"discussion_opportunities\": [\"\"],\n  \"suggested_questions\": [\"\"],\n  \"important_cautions\": [\"\"],\n  \"sources\": [\"\"]\n}\n\nIf a signal type has no reliable evidence, omit it from the signals array entirely.\nIf there is insufficient research overall, say so clearly inside the JSON fields.",
+          "maxOutputTokens": 8000,
+          "temperature": 0.2
+        }
+      },
+      "id": "967056cf-502e-453b-b36f-9e76b3364411",
+      "name": "AI Prospect Intelligence Analysis",
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1.2,
+      "position": [
+        1792,
+        0
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "V041HcqRi4INtfCY",
+          "name": "Google Gemini"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\nconst collectNode = $('Collect & Compile Research').first().json;\nlet analysis = null;\n\n// Case 1: jsonOutput:true with simplify:true returns parsed object directly\nif (input && typeof input === 'object' && (input.prospect !== undefined || input.signals !== undefined || input.overview !== undefined)) {\n  analysis = input;\n}\n\n// Case 2: Response is a string in text/output/content fields that needs parsing\nif (!analysis) {\n  const candidates = [input.text, input.output, input.content, input.message, input.response];\n  for (let i = 0; i < candidates.length; i++) {\n    const src = candidates[i];\n    if (typeof src === 'string' && src.trim().length > 0) {\n      try {\n        const cleaned = src\n          .replace(/^[\\s]*```json[\\s]*/i, '')\n          .replace(/^[\\s]*```[\\s]*/i, '')\n          .replace(/[\\s]*```[\\s]*$/i, '')\n          .trim();\n        analysis = JSON.parse(cleaned);\n        break;\n      } catch(e) {}\n    }\n  }\n}\n\n// Fallback: structured error object so the workflow continues\nif (!analysis) {\n  analysis = {\n    parse_error: true,\n    raw_response_preview: JSON.stringify(input).substring(0, 300),\n    prospect: {\n      name: collectNode.prospect_name || '',\n      email: collectNode.prospect_email || '',\n      company: collectNode.company_name || '',\n      role: collectNode.job_title || '',\n      website: collectNode.company_website || '',\n      linkedin: collectNode.linkedin_profile || '',\n      meeting_date: collectNode.meeting_date || '',\n      meeting_reason: collectNode.meeting_reason || '',\n    },\n    overview: 'AI analysis output could not be parsed. Please review the workflow execution log.',\n    public_positioning: '',\n    signals: [],\n    see_lock_analysis: [],\n    discussion_opportunities: ['AI analysis failed - manual review required.'],\n    suggested_questions: [],\n    important_cautions: ['AI analysis failed. Review the execution log before the meeting.'],\n    sources: [],\n  };\n}\n\n// Ensure all arrays exist\nconst ensureArray = function(v) { return Array.isArray(v) ? v : []; };\nanalysis.signals = ensureArray(analysis.signals);\nanalysis.see_lock_analysis = ensureArray(analysis.see_lock_analysis);\nanalysis.discussion_opportunities = ensureArray(analysis.discussion_opportunities);\nanalysis.suggested_questions = ensureArray(analysis.suggested_questions);\nanalysis.important_cautions = ensureArray(analysis.important_cautions);\nanalysis.sources = ensureArray(analysis.sources);\n\nreturn [{\n  json: Object.assign({}, analysis, {\n    prospect_id: collectNode.prospect_id,\n    submitted_at: collectNode.submitted_at,\n    prospect_email_raw: collectNode.prospect_email,\n    company_name_raw: collectNode.company_name,\n    prospect_name_raw: collectNode.prospect_name,\n    job_title_raw: collectNode.job_title,\n    meeting_date_raw: collectNode.meeting_date,\n    meeting_reason_raw: collectNode.meeting_reason,\n  })\n}];"
+      },
+      "id": "c18d0260-017c-4ef9-9c2e-05f64b02d0ba",
+      "name": "Parse AI Analysis",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2016,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const a = $input.first().json;\nconst LF = String.fromCharCode(10);\nconst SEP = '==================================================';\n\nconst prospect = a.prospect || {};\nconst prospectName  = prospect.name  || a.prospect_name_raw  || '';\nconst companyName   = prospect.company || a.company_name_raw || '';\nconst prospectEmail = prospect.email || a.prospect_email_raw || '';\nconst jobTitle      = prospect.role  || a.job_title_raw      || '';\nconst meetingDate   = prospect.meeting_date || a.meeting_date_raw || '';\nconst meetingReason = prospect.meeting_reason || a.meeting_reason_raw || '';\n\nconst formatSignals = function(signals) {\n  if (!signals || signals.length === 0) return 'No reliable public evidence found.';\n  return signals.map(function(s) {\n    const lines = [];\n    if (s.signal_type)   lines.push('Signal: '        + s.signal_type);\n    if (s.observation)   lines.push('Observation: '   + s.observation);\n    if (s.evidence)      lines.push('Evidence: '      + s.evidence);\n    if (s.source)        lines.push('Source: '        + s.source);\n    if (s.interpretation) lines.push('Interpretation: ' + s.interpretation);\n    if (s.confidence)    lines.push('Confidence: '    + s.confidence);\n    return lines.join(LF);\n  }).join(LF + LF);\n};\n\nconst formatSeeLock = function(items) {\n  if (!items || items.length === 0) return 'Insufficient evidence for SEE -> LOCK analysis.';\n  return items.map(function(item) {\n    const lines = [];\n    if (item.see)      lines.push('SEE: '      + item.see);\n    lines.push('');\n    if (item.lock)     lines.push('LOCK: '     + item.lock);\n    lines.push('');\n    if (item.known)    lines.push('Known: '    + item.known);\n    if (item.inferred) lines.push('Inferred: ' + item.inferred);\n    if (item.unknown)  lines.push('Unknown: '  + item.unknown);\n    if (item.confidence) lines.push('Confidence: ' + item.confidence);\n    return lines.join(LF);\n  }).join(LF + LF);\n};\n\nconst formatList = function(items) {\n  if (!items || items.length === 0) return 'None identified.';\n  return items.map(function(item, i) {\n    return (i + 1) + '. ' + (typeof item === 'string' ? item : JSON.stringify(item));\n  }).join(LF);\n};\n\nconst formatSources = function(sources) {\n  if (!sources || sources.length === 0) return 'No sources recorded.';\n  return sources.map(function(src) { return '- ' + src; }).join(LF);\n};\n\nconst parts = [\n  'CREDENCE PROSPECT INTELLIGENCE BRIEF',\n  SEP,\n  '',\n  'Prospect:     ' + prospectName,\n  'Company:      ' + companyName,\n  'Role:         ' + jobTitle,\n  'Email:        ' + prospectEmail,\n  'Meeting Date: ' + meetingDate,\n  '',\n  SEP,\n  'REASON FOR MEETING',\n  SEP,\n  '',\n  meetingReason,\n  '',\n  SEP,\n  'EXECUTIVE SUMMARY',\n  SEP,\n  '',\n  a.overview || 'No summary available.',\n  '',\n  SEP,\n  'PUBLIC POSITIONING',\n  SEP,\n  '',\n  a.public_positioning || 'No reliable public evidence found.',\n  '',\n  SEP,\n  'KEY PUBLIC SIGNALS',\n  SEP,\n  '',\n  formatSignals(a.signals),\n  '',\n  SEP,\n  'SEE -> LOCK ANALYSIS',\n  SEP,\n  '',\n  formatSeeLock(a.see_lock_analysis),\n  '',\n  SEP,\n  'DISCUSSION OPPORTUNITIES',\n  SEP,\n  '',\n  formatList(a.discussion_opportunities),\n  '',\n  SEP,\n  'SUGGESTED QUESTIONS',\n  SEP,\n  '',\n  formatList(a.suggested_questions),\n  '',\n  SEP,\n  'IMPORTANT CAUTIONS',\n  SEP,\n  '',\n  formatList(a.important_cautions),\n  '',\n  SEP,\n  'RESEARCH SOURCES',\n  SEP,\n  '',\n  formatSources(a.sources),\n  '',\n  SEP,\n  'Brief prepared by Credence Prospect Intelligence System',\n  'Generated: ' + new Date().toISOString(),\n  SEP,\n];\n\nconst docContent = parts.join(LF);\nconst docTitle = 'Prospect Brief - ' + prospectName + ' - ' + companyName;\n\nreturn [{\n  json: {\n    doc_content:    docContent,\n    doc_title:      docTitle,\n    prospect_id:    a.prospect_id,\n    prospect_name:  prospectName,\n    company_name:   companyName,\n    prospect_email: prospectEmail,\n    job_title:      jobTitle,\n    meeting_date:   meetingDate,\n    meeting_reason: meetingReason,\n    submitted_at:   a.submitted_at,\n  }\n}];"
+      },
+      "id": "73c23bc7-1a09-47ca-bb09-3a12927d261f",
+      "name": "Format Document Content",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2240,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "createFromText",
+        "content": "={{ $json.doc_content }}",
+        "name": "={{ $json.doc_title }}",
+        "driveId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "My Drive"
+        },
+        "folderId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "Select your Credence Briefs folder"
+        },
+        "options": {
+          "convertToGoogleDocument": true
+        }
+      },
+      "id": "a96575f6-0e67-4fa7-ae13-9f0e461e69b5",
+      "name": "Create Google Doc",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        2464,
+        0
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "ktzN85vGIDYSPRpw",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "nteinpraises@gmail.com",
+        "subject": "={{ \"New Prospect Brief: \" + $(\"Format Document Content\").first().json.prospect_name + \" - \" + $(\"Format Document Content\").first().json.company_name }}",
+        "message": "={{ \"<html><body style='font-family:Arial,sans-serif;line-height:1.6;color:#333'>\" + \"<p>Hi Blossom,</p>\" + \"<p>A prospect intelligence brief has been prepared for your upcoming meeting.</p>\" + \"<table style='border-collapse:collapse;margin-bottom:20px'>\" + \"<tr><td style='padding:6px 12px;font-weight:bold'>Prospect:</td><td style='padding:6px 12px'>\" + $(\"Format Document Content\").first().json.prospect_name + \"</td></tr>\" + \"<tr><td style='padding:6px 12px;font-weight:bold'>Company:</td><td style='padding:6px 12px'>\" + $(\"Format Document Content\").first().json.company_name + \"</td></tr>\" + \"<tr><td style='padding:6px 12px;font-weight:bold'>Role:</td><td style='padding:6px 12px'>\" + $(\"Format Document Content\").first().json.job_title + \"</td></tr>\" + \"<tr><td style='padding:6px 12px;font-weight:bold'>Meeting Date:</td><td style='padding:6px 12px'>\" + $(\"Format Document Content\").first().json.meeting_date + \"</td></tr>\" + \"<tr><td style='padding:6px 12px;font-weight:bold'>Reason:</td><td style='padding:6px 12px'>\" + $(\"Format Document Content\").first().json.meeting_reason + \"</td></tr>\" + \"</table>\" + \"<p><strong>Brief: </strong><a href='https://docs.google.com/document/d/\" + $(\"Create Google Doc\").first().json.id + \"/edit'>Open Intelligence Brief</a></p>\" + \"<p>The brief includes:</p><ul>\" + \"<li>Prospect overview and company background</li>\" + \"<li>Public positioning</li>\" + \"<li>Key public signals (Growth, Transition, Pain, Engagement, Quiet)</li>\" + \"<li>SEE &rarr; LOCK analysis</li>\" + \"<li>Discussion opportunities</li>\" + \"<li>Suggested questions</li>\" + \"<li>Important cautions</li>\" + \"<li>Research sources</li>\" + \"</ul>\" + \"<p>Regards,<br><strong>Credence Prospect Intelligence System</strong></p>\" + \"</body></html>\" }}",
+        "options": {
+          "appendAttribution": false,
+          "senderName": "Credence Intelligence"
+        }
+      },
+      "id": "f64df3a5-cc4b-4a31-a9a2-b57f7b4ad3a1",
+      "name": "Notify Blossom",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        2688,
+        0
+      ],
+      "webhookId": "bf78fdfe-21dc-4035-89b0-8497e0257804",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "FgV58Ortd5KrEDCJ",
+          "name": "Gmail account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "New Form Response": {
+      "main": [
+        [
+          {
+            "node": "Normalize Prospect Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Prospect Data": {
+      "main": [
+        [
+          {
+            "node": "Research - Company Website",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Research - Company Website": {
+      "main": [
+        [
+          {
+            "node": "Research - Prospect & Company",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Research - Prospect & Company": {
+      "main": [
+        [
+          {
+            "node": "Research - Company News",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Research - Company News": {
+      "main": [
+        [
+          {
+            "node": "Research - LinkedIn Presence",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Research - LinkedIn Presence": {
+      "main": [
+        [
+          {
+            "node": "Collect & Compile Research",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Collect & Compile Research": {
+      "main": [
+        [
+          {
+            "node": "AI Prospect Intelligence Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Prospect Intelligence Analysis": {
+      "main": [
+        [
+          {
+            "node": "Parse AI Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse AI Analysis": {
+      "main": [
+        [
+          {
+            "node": "Format Document Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Document Content": {
+      "main": [
+        [
+          {
+            "node": "Create Google Doc",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Google Doc": {
+      "main": [
+        [
+          {
+            "node": "Notify Blossom",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "nodeGroups": [
+    {
+      "id": "6cdfe7eb-641b-441d-982a-4ccabc2e71f4",
+      "name": "Research Prospect",
+      "nodeIds": [
+        "a98c448f-d53b-4a40-b5b7-7dfc44a56557",
+        "ccb496e4-a5ef-4e2b-92af-5f7c0b0e9350",
+        "8193489c-5f53-44f9-8013-bd4f6cb9028f",
+        "061454bf-741b-49fc-8cc2-ea045173abc1",
+        "9f4df668-2b57-4a4c-93ae-cbfdd813b680"
+      ],
+      "description": "Fetches the company website and runs three Tavily searches — prospect background, company news, LinkedIn — then compiles all findings into a stru"
+    },
+    {
+      "id": "852cea91-b9a5-48c9-b5bd-6184ef00b6b9",
+      "name": "AI Intelligence Analysis",
+      "nodeIds": [
+        "967056cf-502e-453b-b36f-9e76b3364411",
+        "c18d0260-017c-4ef9-9c2e-05f64b02d0ba",
+        "73c23bc7-1a09-47ca-bb09-3a12927d261f"
+      ],
+      "description": "Sends compiled research to Google Gemini using the SEE-LOCK-OFFER framework, parses the JSON response, and formats it as a full intelligence brie"
+    },
+    {
+      "id": "15c5c879-5f66-4a61-9fd6-bb4bf832912e",
+      "name": "Create & Deliver Brief",
+      "nodeIds": [
+        "a96575f6-0e67-4fa7-ae13-9f0e461e69b5",
+        "f64df3a5-cc4b-4a31-a9a2-b57f7b4ad3a1"
+      ],
+      "description": "Creates a Google Doc in your Credence Briefs folder and emails Blossom a notification with a direct link to the brief."
+    }
+  ],
+  "meta": {
+    "instanceId": "61d4b402587ea0a8e4e00ab9ed2eed997f4bbab8707dfdcaf438932bd6c82ee7"
+  }
+}
