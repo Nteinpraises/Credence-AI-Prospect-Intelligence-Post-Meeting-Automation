@@ -1,1 +1,579 @@
-
+{
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "triggerOn": "specificFolder",
+        "folderToWatch": {
+          "__rl": true,
+          "value": "1XjIfjuEhVAuNl-_fo1ww_wTB1QDQhm84",
+          "mode": "list",
+          "cachedResultName": "Blossom's Clients",
+          "cachedResultUrl": "https://drive.google.com/drive/folders/1XjIfjuEhVAuNl-_fo1ww_wTB1QDQhm84"
+        },
+        "event": "fileCreated",
+        "options": {
+          "fileType": "application/vnd.google-apps.document"
+        }
+      },
+      "id": "6c067c7f-e2bc-45af-868b-1f6429f8dfe4",
+      "name": "Detect New Meeting Review",
+      "type": "n8n-nodes-base.googleDriveTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        192
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "ktzN85vGIDYSPRpw",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "documentURL": "={{ $json.id }}"
+      },
+      "id": "0f83bc4b-1216-4364-82c4-e39640f956c0",
+      "name": "Get Meeting Review",
+      "type": "n8n-nodes-base.googleDocs",
+      "typeVersion": 2,
+      "position": [
+        224,
+        192
+      ],
+      "credentials": {
+        "googleDocsOAuth2Api": {
+          "id": "ASfyj2dDFeCEaWYa",
+          "name": "Google Docs account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "\nvar content = $input.item.json.content || '';\nvar triggerData = $('Detect New Meeting Review').item.json;\nvar docName = triggerData.name || '';\nvar docId   = triggerData.id   || '';\nvar docUrl  = docId ? 'https://docs.google.com/document/d/' + docId : '';\n\n// Parse fields line by line (no regex required)\nvar lines = content.split('\\n');\nvar fields = {};\nfor (var i = 0; i < lines.length; i++) {\n  var line = lines[i].trim();\n  if (!line) continue;\n  var colonIdx = line.indexOf(':');\n  // Only treat as a field if colon is within 50 chars (avoids body text with colons)\n  if (colonIdx > 0 && colonIdx < 50) {\n    var key   = line.substring(0, colonIdx).trim().toLowerCase();\n    var value = line.substring(colonIdx + 1).trim();\n    if (value && !fields[key]) {\n      fields[key] = value;\n    }\n  }\n}\n\nfunction getField(keys) {\n  for (var i = 0; i < keys.length; i++) {\n    var k = keys[i].toLowerCase();\n    if (fields[k]) return fields[k];\n  }\n  return '';\n}\n\nvar prospectId    = getField(['prospect id', 'prospect_id', 'prospectid']);\nvar prospectName  = getField(['prospect name', 'prospect_name', 'name']);\nvar prospectEmail = getField(['prospect email', 'prospect_email', 'email']);\nvar company       = getField(['company']);\nvar jobTitle      = getField(['job title', 'job_title', 'jobtitle', 'title']);\nvar meetingDate   = getField(['meeting date', 'meeting_date', 'meetingdate', 'date']);\n\n// Extract section bodies using indexOf (handles variant headers)\nvar transcriptHeaders = [\n  'Meeting Transcript / Notes:',\n  'Meeting Transcript/Notes:',\n  'Meeting Transcript / Notes',\n  'Meeting Notes:',\n  'Transcript:',\n  'Notes:'\n];\nvar reviewHeaders = [\n  \"Blossom's Review:\",\n  \"Blossoms Review:\",\n  \"Blossom Review:\",\n  \"My Review:\"\n];\n\nfunction findSection(text, headers) {\n  for (var i = 0; i < headers.length; i++) {\n    var idx = text.indexOf(headers[i]);\n    if (idx !== -1) {\n      return { start: idx, headerLen: headers[i].length };\n    }\n  }\n  return null;\n}\n\nvar transcriptSection = findSection(content, transcriptHeaders);\nvar reviewSection     = findSection(content, reviewHeaders);\n\nvar transcript   = '';\nvar blossomReview = '';\n\nif (transcriptSection) {\n  var tEnd = reviewSection ? reviewSection.start : content.length;\n  transcript = content.substring(transcriptSection.start + transcriptSection.headerLen, tEnd).trim();\n}\nif (reviewSection) {\n  blossomReview = content.substring(reviewSection.start + reviewSection.headerLen).trim();\n}\n\nreturn {\n  docId:         docId,\n  docName:       docName,\n  docUrl:        docUrl,\n  docContent:    content,\n  transcript:    transcript,\n  blossomReview: blossomReview,\n  prospectId:    prospectId,\n  prospectName:  prospectName,\n  prospectEmail: prospectEmail,\n  company:       company,\n  jobTitle:      jobTitle,\n  meetingDate:   meetingDate,\n};\n"
+      },
+      "id": "a4e1998f-9f0e-481e-b71b-c5d04082504f",
+      "name": "Extract Meeting Metadata",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        448,
+        192
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "fileFolder",
+        "queryString": "={{ $json.prospectName || $json.company || \"Prospect Brief\" }}",
+        "returnAll": true,
+        "filter": {
+          "folderId": {
+            "__rl": true,
+            "mode": "list",
+            "value": "",
+            "cachedResultName": "Select Prospect Briefs folder"
+          },
+          "whatToSearch": "files",
+          "fileTypes": [
+            "application/vnd.google-apps.document"
+          ]
+        },
+        "options": {
+          "fields": [
+            "id",
+            "name",
+            "mimeType"
+          ]
+        }
+      },
+      "id": "4aeee8f4-02fc-4f17-ae14-a064008c1caa",
+      "name": "Find Matching Prospect Brief",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        672,
+        192
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "ktzN85vGIDYSPRpw",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "\nvar searchResults = $input.all();\nvar metadata = $('Extract Meeting Metadata').item.json;\n\nvar hasName  = !!metadata.prospectName;\nvar hasEmail = !!metadata.prospectEmail;\nvar hasId    = !!metadata.prospectId;\n\nif (!hasName && !hasEmail && !hasId) {\n  return [{\n    json: {\n      status: 'error',\n      errorType: 'missing_metadata',\n      errorMessage:\n        'CREDENCE ALERT: Meeting Review — Missing Required Fields\\n\\n' +\n        'Document: \"' + (metadata.docName || 'Unknown') + '\"\\n' +\n        'URL: ' + (metadata.docUrl || 'N/A') + '\\n\\n' +\n        'Could not extract identifying fields. Please ensure your Meeting Review includes these fields at the top:\\n\\n' +\n        '  Prospect ID:     [from original Prospect Brief]\\n' +\n        '  Prospect Name:   [full name]\\n' +\n        '  Prospect Email:  [email address]\\n' +\n        '  Company:         [company name]\\n\\n' +\n        'Re-save the document after correcting it to re-trigger this workflow.',\n      metadata: metadata,\n    }\n  }];\n}\n\n// Filter to real file entries only (discard alwaysOutputData empty items)\nvar files = searchResults\n  .map(function(i) { return i.json; })\n  .filter(function(f) { return f && f.id && f.name; });\n\nif (files.length === 0) {\n  return [{\n    json: {\n      status: 'error',\n      errorType: 'no_match',\n      errorMessage:\n        'CREDENCE ALERT: No Matching Prospect Brief Found\\n\\n' +\n        'Searched for:\\n' +\n        '  Name:         ' + (metadata.prospectName  || 'Not extracted') + '\\n' +\n        '  Company:      ' + (metadata.company       || 'Not extracted') + '\\n' +\n        '  Email:        ' + (metadata.prospectEmail || 'Not extracted') + '\\n' +\n        '  Prospect ID:  ' + (metadata.prospectId    || 'Not extracted') + '\\n\\n' +\n        'Please verify that a Prospect Brief titled \"Prospect Brief - [Name] - [Company]\" exists in the Prospect Briefs folder.',\n      metadata: metadata,\n    }\n  }];\n}\n\nvar matches = files.slice();\n\n// Narrow by company name if multiple results\nif (matches.length > 1 && metadata.company) {\n  var byCompany = matches.filter(function(f) {\n    return f.name &&\n      f.name.toLowerCase().indexOf(metadata.company.toLowerCase()) !== -1;\n  });\n  if (byCompany.length >= 1) {\n    matches = byCompany;\n  }\n}\n\nif (matches.length > 1) {\n  var nameList = matches.map(function(f) { return '  - ' + f.name; }).join('\\n');\n  return [{\n    json: {\n      status: 'error',\n      errorType: 'multiple_matches',\n      errorMessage:\n        'CREDENCE ALERT: Multiple Matching Prospect Briefs Found\\n\\n' +\n        'Found ' + matches.length + ' matches for \"' + (metadata.prospectName || 'Unknown') + '\":\\n\\n' +\n        nameList + '\\n\\n' +\n        'No analysis was generated to avoid using the wrong data.\\n' +\n        'Resolution: Check for duplicates in the Prospect Briefs folder, or add a more specific Prospect ID to the Meeting Review.',\n      metadata: metadata,\n    }\n  }];\n}\n\nvar brief = matches[0];\nreturn [{\n  json: {\n    status: 'ok',\n    briefFileId: brief.id,\n    briefName: brief.name,\n    metadata: metadata,\n  }\n}];\n"
+      },
+      "id": "43baf52e-574f-443d-9576-ebec97bdd356",
+      "name": "Validate Match",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        896,
+        192
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "status_ok",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "ok",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "e5c82a5d-dfea-4b91-837f-f78c5f0b42ce",
+      "name": "Has Valid Match?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1120,
+        192
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "documentURL": "={{ $json.briefFileId }}"
+      },
+      "id": "a8f3090b-4eb7-4fdb-8bb8-98a42946db16",
+      "name": "Get Prospect Brief",
+      "type": "n8n-nodes-base.googleDocs",
+      "typeVersion": 2,
+      "position": [
+        1344,
+        96
+      ],
+      "credentials": {
+        "googleDocsOAuth2Api": {
+          "id": "ASfyj2dDFeCEaWYa",
+          "name": "Google Docs account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "\nvar briefContent   = $input.item.json.content || '';\nvar validationData = $('Validate Match').item.json;\nvar meetingData    = $('Extract Meeting Metadata').item.json;\nvar metadata       = validationData.metadata || meetingData;\n\nvar prompt =\n  'You are analyzing a post-meeting intelligence report for Blossom Affia.' +\n  ' She uses the SEE LOCK OFFER methodology from \"The $10K Message\".\\n\\n' +\n  'PROSPECT INFORMATION (from Meeting Review)\\n' +\n  'Prospect ID:  ' + (metadata.prospectId   || 'Not provided') + '\\n' +\n  'Name:         ' + (metadata.prospectName  || 'Unknown')      + '\\n' +\n  'Email:        ' + (metadata.prospectEmail || 'Not provided') + '\\n' +\n  'Company:      ' + (metadata.company       || 'Unknown')      + '\\n' +\n  'Job Title:    ' + (metadata.jobTitle      || 'Not provided') + '\\n' +\n  'Meeting Date: ' + (metadata.meetingDate   || 'Not provided') + '\\n\\n' +\n  'ORIGINAL PROSPECT BRIEF (pre-meeting intelligence — publicly observed facts and hypotheses)\\n' +\n  '---\\n' +\n  briefContent +\n  '\\n---\\n\\n' +\n  'MEETING REVIEW (actual meeting outcome — this is the PRIMARY source of truth)\\n' +\n  '---\\n' +\n  (meetingData.docContent || 'Not available') +\n  '\\n---\\n\\n' +\n  'TASK\\n' +\n  'Compare these two sources and generate a post-meeting analysis.\\n' +\n  'The Meeting Review is what ACTUALLY happened. Treat it as the primary source.\\n' +\n  'The Prospect Brief contains pre-meeting PUBLIC observations and hypotheses.\\n\\n' +\n  'RULES\\n' +\n  '1. Never invent information. Write \"No reliable evidence found\" when insufficient.\\n' +\n  '2. Distinguish: publicly observed vs. meeting-confirmed vs. prospect-stated.\\n' +\n  '3. Only include SEE LOCK entries where meeting evidence is clear.\\n' +\n  '4. follow_up_message must sound human and specific, not corporate.\\n' +\n  '5. recommendation must be specific to this prospect. No generic advice.\\n\\n' +\n  'Return ONLY valid JSON. No markdown fences. No text outside JSON.\\n\\n' +\n  '{\\n' +\n  '  \"prospect\": {\\n' +\n  '    \"prospect_id\": \"' + (metadata.prospectId   || '') + '\",\\n' +\n  '    \"name\": \"'         + (metadata.prospectName  || '') + '\",\\n' +\n  '    \"email\": \"'        + (metadata.prospectEmail || '') + '\",\\n' +\n  '    \"company\": \"'      + (metadata.company       || '') + '\",\\n' +\n  '    \"job_title\": \"'    + (metadata.jobTitle      || '') + '\",\\n' +\n  '    \"meeting_date\": \"' + (metadata.meetingDate   || '') + '\"\\n' +\n  '  },\\n' +\n  '  \"pre_meeting_summary\": \"Summary of pre-meeting research and what was hypothesized\",\\n' +\n  '  \"meeting_summary\": \"Summary of what happened — stated problems, goals, key moments\",\\n' +\n  '  \"confirmed_problems\": [\"array of problems the prospect explicitly stated or confirmed\"],\\n' +\n  '  \"confirmed_goals\": [\"array of goals the prospect explicitly stated or confirmed\"],\\n' +\n  '  \"new_information\": [\"information discovered in meeting not in the pre-meeting brief\"],\\n' +\n  '  \"pre_meeting_assumptions_confirmed\": [\"hypotheses from the original brief confirmed by the meeting\"],\\n' +\n  '  \"pre_meeting_assumptions_rejected_or_changed\": [\"hypotheses contradicted or significantly changed\"],\\n' +\n  '  \"see_lock_analysis\": [{\"see\": \"observation\", \"lock\": \"gap or friction it reveals\", \"evidence\": \"direct quote or data\", \"confidence\": \"High/Medium/Low\"}],\\n' +\n  '  \"key_opportunities\": [\"specific opportunities based on meeting evidence\"],\\n' +\n  '  \"recommended_next_step\": \"the single most important next action for Blossom\",\\n' +\n  '  \"recommendation\": \"specific recommendation — what to do, why, and how — for THIS prospect only\",\\n' +\n  '  \"follow_up_message\": \"personalized message Blossom sends to the prospect — specific, human, concise, with a clear next step\",\\n' +\n  '  \"important_cautions\": [\"key risks, contradictions, or uncertainties to be aware of\"],\\n' +\n  '  \"sources\": [\"Original Prospect Brief\", \"Meeting Review - ' + (metadata.docName || 'Unknown') + '\"]\\n' +\n  '}';\n\nreturn {\n  prompt:    prompt,\n  metadata:  metadata,\n  briefName: validationData.briefName || '',\n  docUrl:    metadata.docUrl || '',\n};\n"
+      },
+      "id": "7c802796-d04d-48a0-a205-a1e8f243371c",
+      "name": "Prepare Analysis",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1568,
+        96
+      ]
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "models/gemini-2.5-flash",
+          "cachedResultName": "Gemini 2.5 Flash"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "={{ $json.prompt }}"
+            }
+          ]
+        },
+        "builtInTools": {},
+        "options": {
+          "systemMessage": "You are a post-meeting business analyst for Blossom Affia.\nShe uses the SEE LOCK OFFER methodology from \"The $10K Message\".\n\nSEE: Identify something real and specific from the meeting.\nLOCK: Frame it around a gap, friction, cost, or normalized problem.\nOFFER: The smallest useful next step or discussion.\n\nSignal categories (use only with clear evidence): Growth, Pain, Transition, Engagement, Quiet.\n\nRULES:\n1. Return ONLY valid JSON — no markdown fences, no text outside JSON\n2. Never invent information — use \"No reliable evidence found\" when insufficient\n3. Distinguish: publicly observed vs. meeting-confirmed vs. prospect-stated\n4. Include SEE LOCK entries only where meeting evidence is clear\n5. follow_up_message must be specific, human, not corporate\n6. recommendation must be specific to THIS prospect only, not generic",
+          "maxOutputTokens": 8192,
+          "temperature": 0.3
+        }
+      },
+      "id": "4a594c83-06f4-4d8a-be52-5ad00a28d992",
+      "name": "AI Post-Meeting Analysis",
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1.2,
+      "position": [
+        1792,
+        96
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "V041HcqRi4INtfCY",
+          "name": "Google Gemini"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "\nvar item     = $input.item;\nvar prepData = $('Prepare Analysis').item.json;\nvar metadata = prepData.metadata;\n\n// Get raw text from AI response\nvar rawText = '';\nif (item.json.text) {\n  rawText = String(item.json.text);\n} else if (item.json.message && item.json.message.content) {\n  rawText = String(item.json.message.content);\n} else {\n  rawText = JSON.stringify(item.json);\n}\n\n// Strip markdown code fences (no regex with backticks needed)\nvar jsonText = rawText.trim();\nif (jsonText.length > 3 && jsonText.substring(0, 3) === '```') {\n  var firstNewline = jsonText.indexOf('\\n');\n  if (firstNewline !== -1) {\n    jsonText = jsonText.substring(firstNewline + 1).trim();\n  }\n  if (jsonText.length >= 3 && jsonText.substring(jsonText.length - 3) === '```') {\n    jsonText = jsonText.substring(0, jsonText.length - 3).trim();\n  }\n}\n\nvar analysis;\ntry {\n  analysis = JSON.parse(jsonText);\n} catch (e) {\n  return {\n    status: 'error',\n    errorMessage:\n      'CREDENCE ALERT: AI Response Could Not Be Parsed\\n\\n' +\n      'Prospect: ' + (metadata.prospectName || 'Unknown') + ' — ' + (metadata.company || 'Unknown') + '\\n' +\n      'Meeting Date: ' + (metadata.meetingDate || 'Unknown') + '\\n\\n' +\n      'The AI returned an invalid response. Please re-save the Meeting Review to retry.\\n\\n' +\n      'Error: ' + e.message,\n    metadata: metadata,\n  };\n}\n\nif (!analysis.prospect || !analysis.recommendation) {\n  return {\n    status: 'error',\n    errorMessage:\n      'CREDENCE ALERT: AI Analysis Incomplete\\n\\n' +\n      'Prospect: ' + (metadata.prospectName || 'Unknown') + ' — ' + (metadata.company || 'Unknown') + '\\n\\n' +\n      'The AI analysis is missing required fields (prospect info or recommendation). Please re-save the Meeting Review to retry.',\n    metadata: metadata,\n  };\n}\n\nvar p            = analysis.prospect || {};\nvar prospectName = p.name      || metadata.prospectName  || 'Unknown';\nvar company      = p.company   || metadata.company       || 'Unknown';\nvar docTitle     = 'Post-Meeting Analysis - ' + prospectName + ' - ' + company;\n\nfunction fmtList(arr) {\n  if (!arr || arr.length === 0) return 'None identified.';\n  return arr.map(function(s) { return '  * ' + s; }).join('\\n');\n}\n\nfunction fmtSeeLock(arr) {\n  if (!arr || arr.length === 0) return 'No SEE LOCK analysis identified.';\n  return arr.map(function(s, i) {\n    return '[' + (i + 1) + ']\\n' +\n      'SEE:        ' + (s.see        || 'N/A') + '\\n' +\n      'LOCK:       ' + (s.lock       || 'N/A') + '\\n' +\n      'Evidence:   ' + (s.evidence   || 'N/A') + '\\n' +\n      'Confidence: ' + (s.confidence || 'N/A');\n  }).join('\\n\\n');\n}\n\nvar today = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });\n\nvar docContent =\n  'POST-MEETING ANALYSIS\\n' +\n  'Generated by CREDENCE | ' + today + '\\n' +\n  '===================================================\\n\\n' +\n\n  '1. PROSPECT INFORMATION\\n' +\n  '---------------------------------------------------\\n' +\n  'Name:           ' + prospectName + '\\n' +\n  'Company:        ' + company + '\\n' +\n  'Job Title:      ' + (p.job_title    || metadata.jobTitle      || 'N/A') + '\\n' +\n  'Email:          ' + (p.email        || metadata.prospectEmail || 'N/A') + '\\n' +\n  'Prospect ID:    ' + (p.prospect_id  || metadata.prospectId    || 'N/A') + '\\n' +\n  'Meeting Date:   ' + (p.meeting_date || metadata.meetingDate   || 'N/A') + '\\n' +\n  'Original Brief: ' + (prepData.briefName || 'N/A') + '\\n\\n' +\n\n  '2. PRE-MEETING SUMMARY\\n' +\n  '---------------------------------------------------\\n' +\n  (analysis.pre_meeting_summary || 'Not available.') + '\\n\\n' +\n\n  '3. MEETING SUMMARY\\n' +\n  '---------------------------------------------------\\n' +\n  (analysis.meeting_summary || 'Not available.') + '\\n\\n' +\n\n  '4. CONFIRMED PROBLEMS\\n' +\n  '---------------------------------------------------\\n' +\n  fmtList(analysis.confirmed_problems) + '\\n\\n' +\n\n  '5. CONFIRMED GOALS\\n' +\n  '---------------------------------------------------\\n' +\n  fmtList(analysis.confirmed_goals) + '\\n\\n' +\n\n  '6. NEW INFORMATION (discovered in meeting)\\n' +\n  '---------------------------------------------------\\n' +\n  fmtList(analysis.new_information) + '\\n\\n' +\n\n  '7. WHAT CHANGED FROM THE ORIGINAL BRIEF\\n' +\n  '---------------------------------------------------\\n' +\n  'Assumptions CONFIRMED:\\n' +\n  fmtList(analysis.pre_meeting_assumptions_confirmed) + '\\n\\n' +\n  'Assumptions REJECTED OR CHANGED:\\n' +\n  fmtList(analysis.pre_meeting_assumptions_rejected_or_changed) + '\\n\\n' +\n\n  '8. SEE LOCK ANALYSIS\\n' +\n  '---------------------------------------------------\\n' +\n  fmtSeeLock(analysis.see_lock_analysis) + '\\n\\n' +\n\n  '9. KEY OPPORTUNITIES\\n' +\n  '---------------------------------------------------\\n' +\n  fmtList(analysis.key_opportunities) + '\\n\\n' +\n\n  '10. RECOMMENDATION\\n' +\n  '---------------------------------------------------\\n' +\n  (analysis.recommendation || 'No recommendation generated.') + '\\n\\n' +\n\n  '11. RECOMMENDED NEXT STEP\\n' +\n  '---------------------------------------------------\\n' +\n  (analysis.recommended_next_step || 'Not specified.') + '\\n\\n' +\n\n  '12. PERSONALIZED FOLLOW-UP MESSAGE\\n' +\n  '---------------------------------------------------\\n' +\n  (analysis.follow_up_message || 'No follow-up message generated.') + '\\n\\n' +\n\n  '13. IMPORTANT CAUTIONS\\n' +\n  '---------------------------------------------------\\n' +\n  fmtList(analysis.important_cautions) + '\\n\\n' +\n\n  '14. SOURCES\\n' +\n  '---------------------------------------------------\\n' +\n  fmtList(analysis.sources) + '\\n\\n' +\n\n  '===================================================\\n' +\n  'End of Post-Meeting Analysis — Generated by CREDENCE';\n\nvar mainProblem = (analysis.confirmed_problems && analysis.confirmed_problems[0]) || 'Not specified';\nvar mainGoal    = (analysis.confirmed_goals    && analysis.confirmed_goals[0])    || 'Not specified';\n\nreturn {\n  status:       'ok',\n  analysis:     analysis,\n  docTitle:     docTitle,\n  docContent:   docContent,\n  prospectName: prospectName,\n  company:      company,\n  prospectEmail: (p.email        || metadata.prospectEmail || ''),\n  meetingDate:   (p.meeting_date || metadata.meetingDate   || 'Unknown'),\n  mainProblem:  mainProblem,\n  mainGoal:     mainGoal,\n  nextStep:     analysis.recommended_next_step || 'Not specified',\n  followUp:     analysis.follow_up_message     || 'Not generated',\n  docUrl:       metadata.docUrl || '',\n  metadata:     metadata,\n};\n"
+      },
+      "id": "490132a4-55e5-4dc3-aeb9-7be1f0443f0e",
+      "name": "Parse AI Analysis",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2016,
+        96
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "ai_status_ok",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "ok",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "5c849e78-8d1c-4ec1-b4bb-ec0f61a31875",
+      "name": "AI Output Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2240,
+        96
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "createFromText",
+        "content": "={{ $json.docContent }}",
+        "name": "={{ $json.docTitle }}",
+        "driveId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "My Drive"
+        },
+        "folderId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "Select Post-Meeting Outputs folder"
+        },
+        "options": {
+          "convertToGoogleDocument": true
+        }
+      },
+      "id": "c2c54376-177a-4e8a-8156-ad97e9415cef",
+      "name": "Create Post-Meeting Output",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        2464,
+        0
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "ktzN85vGIDYSPRpw",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "kahunapraize@gmail.com",
+        "subject": "={{ \"Post-Meeting Analysis: \" + $(\"Parse AI Analysis\").item.json.prospectName + \" — \" + $(\"Parse AI Analysis\").item.json.company }}",
+        "message": "={{ \"<h2 style='margin-bottom:4px'>Post-Meeting Analysis Ready</h2>\" +\"<p style='color:#555;margin-top:0'>Generated by CREDENCE</p><hr>\" +\"<table style='border-collapse:collapse'>\" +\"<tr><td style='padding:4px 8px;font-weight:bold'>Prospect</td><td style='padding:4px 8px'>\" + $(\"Parse AI Analysis\").item.json.prospectName + \"</td></tr>\" +\"<tr><td style='padding:4px 8px;font-weight:bold'>Company</td><td style='padding:4px 8px'>\" + $(\"Parse AI Analysis\").item.json.company + \"</td></tr>\" +\"<tr><td style='padding:4px 8px;font-weight:bold'>Meeting Date</td><td style='padding:4px 8px'>\" + $(\"Parse AI Analysis\").item.json.meetingDate + \"</td></tr>\" +\"</table><hr>\" +\"<h3>Main Problem Confirmed</h3><p>\" + $(\"Parse AI Analysis\").item.json.mainProblem + \"</p>\" +\"<h3>Main Goal Confirmed</h3><p>\" + $(\"Parse AI Analysis\").item.json.mainGoal + \"</p>\" +\"<h3>Recommended Next Step</h3><p>\" + $(\"Parse AI Analysis\").item.json.nextStep + \"</p>\" +\"<hr><h3>Personalized Follow-Up Message</h3>\" +\"<blockquote style='border-left:3px solid #ccc;padding-left:12px;margin-left:0;color:#333'>\" +$(\"Parse AI Analysis\").item.json.followUp +\"</blockquote><hr>\" +\"<p><a href='https://docs.google.com/document/d/\" + $json.id + \"/edit'>View Full Post-Meeting Analysis Document</a></p>\" +\"<p style='color:#aaa;font-size:12px'>This email was generated automatically by the CREDENCE Post-Meeting Workflow.</p>\" }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "7312d557-5c88-45ef-a0a5-640e25934a75",
+      "name": "Notify Blossom",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        2688,
+        0
+      ],
+      "webhookId": "3b4f3c5d-ae5a-4cd6-b604-04d3cfbc2cb2",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "FgV58Ortd5KrEDCJ",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "eternabonamoussadi@gmail.com",
+        "subject": "={{ \"CREDENCE Alert — AI Analysis Error: \" + ($json.metadata && $json.metadata.prospectName ? $json.metadata.prospectName + \" - \" + ($json.metadata.company || \"\") : \"Unknown Prospect\") }}",
+        "emailType": "text",
+        "message": "={{ $json.errorMessage }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "61bb7317-6e67-4a19-ab33-c98687dd7cd7",
+      "name": "Notify Blossom - AI Error",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        2464,
+        192
+      ],
+      "webhookId": "f45eb436-6e69-4d12-a9df-8ec4595e099f",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "FgV58Ortd5KrEDCJ",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "npraises670@gmail.com",
+        "subject": "={{ \"CREDENCE Alert — \" + ($json.errorType === \"missing_metadata\" ? \"Meeting Review: Missing Fields\" : $json.errorType === \"no_match\" ? \"No Matching Prospect Brief Found\" : \"Multiple Prospect Briefs Found\") }}",
+        "emailType": "text",
+        "message": "={{ $json.errorMessage }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "09f4c2cb-7ab9-4b0f-9cfa-4d812d8ee83d",
+      "name": "Notify Blossom - Error",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1344,
+        288
+      ],
+      "webhookId": "73aeda88-9847-4348-b6aa-0088066aeca6",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "FgV58Ortd5KrEDCJ",
+          "name": "Gmail account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Detect New Meeting Review": {
+      "main": [
+        [
+          {
+            "node": "Get Meeting Review",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Meeting Review": {
+      "main": [
+        [
+          {
+            "node": "Extract Meeting Metadata",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Meeting Metadata": {
+      "main": [
+        [
+          {
+            "node": "Find Matching Prospect Brief",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Matching Prospect Brief": {
+      "main": [
+        [
+          {
+            "node": "Validate Match",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Match": {
+      "main": [
+        [
+          {
+            "node": "Has Valid Match?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Valid Match?": {
+      "main": [
+        [
+          {
+            "node": "Get Prospect Brief",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Notify Blossom - Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Prospect Brief": {
+      "main": [
+        [
+          {
+            "node": "Prepare Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Analysis": {
+      "main": [
+        [
+          {
+            "node": "AI Post-Meeting Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Post-Meeting Analysis": {
+      "main": [
+        [
+          {
+            "node": "Parse AI Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse AI Analysis": {
+      "main": [
+        [
+          {
+            "node": "AI Output Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Output Valid?": {
+      "main": [
+        [
+          {
+            "node": "Create Post-Meeting Output",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Notify Blossom - AI Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Post-Meeting Output": {
+      "main": [
+        [
+          {
+            "node": "Notify Blossom",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "nodeGroups": [
+    {
+      "id": "39244f21-fbda-4a06-974e-16fad6614546",
+      "name": "Read & Identify Prospect",
+      "nodeIds": [
+        "0f83bc4b-1216-4364-82c4-e39640f956c0",
+        "a4e1998f-9f0e-481e-b71b-c5d04082504f",
+        "4aeee8f4-02fc-4f17-ae14-a064008c1caa",
+        "43baf52e-574f-443d-9576-ebec97bdd356",
+        "e5c82a5d-dfea-4b91-837f-f78c5f0b42ce"
+      ],
+      "description": "Reads the new Meeting Review, extracts prospect details, searches Prospect Briefs folder for a unique match, and validates the result before cont"
+    },
+    {
+      "id": "04650a63-7484-4610-b577-3e78c69f4082",
+      "name": "Generate Post-Meeting Analysis",
+      "nodeIds": [
+        "a8f3090b-4eb7-4fdb-8bb8-98a42946db16",
+        "7c802796-d04d-48a0-a205-a1e8f243371c",
+        "4a594c83-06f4-4d8a-be52-5ad00a28d992",
+        "490132a4-55e5-4dc3-aeb9-7be1f0443f0e",
+        "5c849e78-8d1c-4ec1-b4bb-ec0f61a31875"
+      ],
+      "description": "Reads the original Prospect Brief, compares it with the Meeting Review, runs Gemini AI analysis using the SEE LOCK OFFER methodology, and validat"
+    },
+    {
+      "id": "d124690c-5a58-4193-998f-3466b8977c89",
+      "name": "Create Output & Notify Blossom",
+      "nodeIds": [
+        "c2c54376-177a-4e8a-8156-ad97e9415cef",
+        "7312d557-5c88-45ef-a0a5-640e25934a75"
+      ],
+      "description": "Creates the Post-Meeting Analysis Google Doc in the Post-Meeting Outputs folder and emails Blossom with the recommendation, next step, and person"
+    }
+  ],
+  "meta": {
+    "instanceId": "61d4b402587ea0a8e4e00ab9ed2eed997f4bbab8707dfdcaf438932bd6c82ee7"
+  }
+}
